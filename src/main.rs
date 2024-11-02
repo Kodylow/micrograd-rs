@@ -14,8 +14,8 @@ fn main() {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let a = Value::new(2.0, None);
-    let b = Value::new(3.0, None);
+    let a = Value::new(2.0, None, None);
+    let b = Value::new(3.0, None, None);
     let c = a.clone() + b.clone();
 
     info!("a={}", a);
