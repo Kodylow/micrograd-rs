@@ -1,14 +1,14 @@
 #[derive(Clone, Debug)]
 pub struct Value {
     data: f64,
-    children: Vec<Value>,
+    prev: Vec<Value>,
 }
 
 impl Value {
     pub fn new(data: f64, children: Option<Vec<Value>>) -> Self {
         Self {
             data,
-            children: children.unwrap_or(vec![]),
+            prev: children.unwrap_or(vec![]),
         }
     }
 }
@@ -52,6 +52,6 @@ impl std::ops::Div for Value {
 // Implement Display trait for pretty printing
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Value(data={}, children={:?})", self.data, self.children)
+        write!(f, "Value(data={}, prev={:?})", self.data, self.prev)
     }
 }
