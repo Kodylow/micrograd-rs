@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -29,78 +27,44 @@ impl Value {
         }
     }
 
-    pub fn trace(&self) -> (HashSet<&Value>, HashSet<(&Value, &Value)>) {
-        let mut nodes = HashSet::new();
-        let mut edges = HashSet::new();
-
-        fn build<'a>(
-            v: &'a Value,
-            nodes: &mut HashSet<&'a Value>,
-            edges: &mut HashSet<(&'a Value, &'a Value)>,
-        ) {
-            if !nodes.contains(&v) {
-                nodes.insert(v);
-                for child in &v.prev {
-                    edges.insert((child, v));
-                    build(child, nodes, edges);
-                }
-            }
-        }
-
-        build(self, &mut nodes, &mut edges);
-        (nodes, edges)
-    }
-
     pub fn draw_ascii(&self) -> String {
-        let (nodes, _) = self.trace();
         let mut result = String::new();
-
-        // Create a mapping of nodes to their levels
-        let mut levels: HashMap<*const Value, usize> = HashMap::new();
-
-        // Helper function to determine node levels
-        fn assign_levels(
-            v: &Value,
-            level: usize,
-            levels: &mut HashMap<*const Value, usize>,
-        ) -> usize {
-            let ptr = v as *const Value;
-            let current_level = levels.entry(ptr).or_insert(level);
-            *current_level = (*current_level).max(level);
-
-            let mut max_child_level = *current_level;
-            for child in &v.prev {
-                max_child_level = max_child_level.max(assign_levels(child, level + 1, levels));
-            }
-            max_child_level
-        }
-
-        let max_level = assign_levels(self, 0, &mut levels);
-
-        // Sort nodes by levels
-        let mut nodes_by_level: Vec<Vec<&Value>> = vec![Vec::new(); max_level + 1];
-        for node in nodes {
-            let level = levels[&(node as *const Value)];
-            nodes_by_level[level].push(node);
-        }
-
-        // Only print operation nodes with their connections
-        for level_nodes in nodes_by_level.iter() {
-            for node in level_nodes {
-                if !node.op.is_empty() {
-                    let label = format!("{} ({:.4})", node.op, node.data);
-                    result.push_str(&format!("{}\n", label));
-
-                    for child in &node.prev {
-                        result.push_str(&format!("└─> {:.4}\n", child.data));
-                    }
-                }
-            }
-        }
-
+        let mut visited = std::collections::HashSet::new();
+        self.draw_ascii_recursive(&mut result, &mut visited, 0);
         result
     }
 
+    fn draw_ascii_recursive(
+        &self,
+        result: &mut String,
+        visited: &mut std::collections::HashSet<usize>,
+        depth: usize,
+    ) {
+        let ptr = self as *const Value as usize;
+        if visited.contains(&ptr) {
+            return;
+        }
+        visited.insert(ptr);
+
+        let indent = "      ".repeat(depth);
+
+        // Draw children first
+        if !self.prev.is_empty() {
+            for child in &self.prev {
+                child.draw_ascii_recursive(result, visited, depth + 1);
+            }
+
+            // After children, draw the operation
+            result.push_str(&indent);
+            result.push_str(&format!("  {}\n", self.op));
+        }
+
+        // Draw current node
+        result.push_str(&indent);
+        result.push_str(&format!("{:.4}\n", self.data));
+    }
+
+    #[allow(dead_code)]
     pub fn render_ascii(&self, output_file: &str) -> std::io::Result<()> {
         let ascii = self.draw_ascii();
         std::fs::write(output_file, ascii)?;

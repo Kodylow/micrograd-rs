@@ -5,7 +5,6 @@
 
 use anyhow::Result;
 use nn::Value;
-use tracing::info;
 
 mod engine;
 mod nn;
@@ -18,14 +17,11 @@ fn main() -> Result<()> {
     let a = Value::new(2.0, None, None);
     let b = Value::new(3.0, None, None);
     let c = a.clone() + b.clone();
-
-    info!("a={}", a);
-    info!("b={}", b);
-    info!("c={}", c);
+    let d = Value::new(4.0, None, None);
+    let e = c.clone() * d.clone();
 
     // Print the computation graph
-    println!("\nComputation Graph for c = a + b:");
-    println!("{}", c.draw_ascii());
+    println!("{}", e.draw_ascii());
 
     // Or save to file
     // c.render_ascii("graph.txt").unwrap();
