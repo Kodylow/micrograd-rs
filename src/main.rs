@@ -15,10 +15,10 @@ fn main() -> Result<()> {
         .init();
 
     let a = Value::new(2.0, None, None);
-    let b = Value::new(3.0, None, None);
-    let c = a.clone() + b.clone();
-    let d = Value::new(4.0, None, None);
-    let e = c.clone() * d.clone();
+    let b = Value::new(-3.0, None, None);
+    let c = a.clone() * b.clone();
+    let d = Value::new(10.0, None, None);
+    let e = c.clone() + d.clone();
 
     // Print the computation graph
     println!("{}", e.draw_ascii());
