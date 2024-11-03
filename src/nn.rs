@@ -2,6 +2,7 @@ use std::{
     borrow::Borrow,
     hash::{Hash, Hasher},
     ops::{Add, Div, Mul, Sub},
+    sync::Arc,
 };
 
 pub struct Value {
@@ -10,7 +11,7 @@ pub struct Value {
     pub(crate) op: String,
     pub(crate) label: String,
     pub(crate) grad: f64,
-    pub(crate) backward_fn: Option<Box<dyn Fn(&mut Value)>>,
+    pub(crate) backward_fn: Option<Arc<dyn Fn(&mut Value) + Send + Sync>>,
 }
 
 impl Value {
@@ -33,6 +34,19 @@ impl Value {
         self.grad = grad;
     }
 
+    pub fn backward(&mut self) {
+        // First, call the backward function if it exists
+        if let Some(backward_fn) = self.backward_fn.take() {
+            backward_fn(self);
+            self.backward_fn = Some(backward_fn);
+        }
+
+        // Then recursively call backward on all children
+        for child in &mut self.prev {
+            child.backward();
+        }
+    }
+
     fn binary_op(left: impl Borrow<Value>, right: impl Borrow<Value>, op: &str) -> Value {
         let left = left.borrow();
         let right = right.borrow();
@@ -51,30 +65,30 @@ impl Value {
             Some(op.to_string()),
         );
 
-        // Set the backward function based on operation
+        // Set the backprop function based on operation
         out.backward_fn = match op {
-            "+" => Some(Box::new(|out: &mut Value| {
+            "+" => Some(Arc::new(|out: &mut Value| {
                 // For addition, gradient flows equally to both inputs
                 // ∂(a+b)/∂a = 1
                 out.prev[0].grad += out.grad;
                 // ∂(a+b)/∂b = 1
                 out.prev[1].grad += out.grad;
             })),
-            "*" => Some(Box::new(|out: &mut Value| {
+            "*" => Some(Arc::new(|out: &mut Value| {
                 // For multiplication, gradient flows to each input scaled by the other input
                 // ∂(a*b)/∂a = b
                 out.prev[0].grad += out.prev[1].data * out.grad;
                 // ∂(a*b)/∂b = a
                 out.prev[1].grad += out.prev[0].data * out.grad;
             })),
-            "-" => Some(Box::new(|out: &mut Value| {
+            "-" => Some(Arc::new(|out: &mut Value| {
                 // For subtraction, gradient flows to the first input and subtracts from the second
                 // ∂(a-b)/∂a = 1
                 out.prev[0].grad += out.grad;
                 // ∂(a-b)/∂b = -1
                 out.prev[1].grad -= out.grad;
             })),
-            "/" => Some(Box::new(|out: &mut Value| {
+            "/" => Some(Arc::new(|out: &mut Value| {
                 // For division (a/b), gradient flows according to quotient rule
                 // ∂(a/b)/∂a = 1/b
                 out.prev[0].grad += out.grad * (1.0 / out.prev[1].data);
@@ -92,12 +106,19 @@ impl Value {
         let exp_pos = x.exp();
         let exp_neg = (-x).exp();
         let t = (exp_pos - exp_neg) / (exp_pos + exp_neg);
-        Value::new(
+        let mut out = Value::new(
             t,
             Some(vec![self.clone()]),
             format!("tanh({})", self.label),
             Some("tanh".to_string()),
-        )
+        );
+
+        out.backward_fn = Some(Arc::new(|out: &mut Value| {
+            // For tanh(x), gradient is 1 - tanh(x)^2
+            let t = out.data; // t is already the tanh result
+            out.prev[0].grad += (1.0 - t * t) * out.grad;
+        }));
+        out
     }
 }
 
@@ -173,7 +194,7 @@ impl Clone for Value {
             op: self.op.clone(),
             label: self.label.clone(),
             grad: self.grad,
-            backward_fn: None,
+            backward_fn: self.backward_fn.clone(),
         }
     }
 }

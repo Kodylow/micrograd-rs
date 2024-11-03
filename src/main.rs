@@ -39,12 +39,20 @@ fn main() -> Result<()> {
     n.set_label("n".to_string());
 
     let mut o = n.tanh();
-    o.set_grad(1.0);
     o.set_label("o".to_string());
     // do/dn = 1 - tanh(n)^2 = 1 - o^2
 
-    // Print the computation graph
+    // Print the computation graph before backprop
+    println!("Before backprop:");
     println!("{}", o.draw_ascii());
 
+    // Backpropagate the gradient of o with respect to n
+    // Set the gradient of o to 1.0 as the base case
+    o.set_grad(1.0);
+    o.backward();
+
+    // Print the computation graph after backprop
+    println!("After backprop:");
+    println!("{}", o.draw_ascii());
     Ok(())
 }
