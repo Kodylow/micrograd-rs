@@ -38,8 +38,11 @@ fn main() -> Result<()> {
     let mut n = &x1w1x2w2 + &b;
     n.set_label("n".to_string());
 
+    let mut o = n.tanh();
+    o.set_label("o".to_string());
+
     // Print the computation graph
-    println!("{}", n.draw_ascii());
+    println!("{}", o.draw_ascii());
 
     Ok(())
 }

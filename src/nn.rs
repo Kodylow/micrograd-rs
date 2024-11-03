@@ -55,6 +55,19 @@ impl Value {
             Some(op.to_string()),
         )
     }
+
+    pub fn tanh(&self) -> Value {
+        let x = self.data;
+        let exp_pos = x.exp();
+        let exp_neg = (-x).exp();
+        let t = (exp_pos - exp_neg) / (exp_pos + exp_neg);
+        Value::new(
+            t,
+            Some(vec![self.clone()]),
+            format!("tanh({})", self.label),
+            Some("tanh".to_string()),
+        )
+    }
 }
 
 macro_rules! impl_binary_op {
