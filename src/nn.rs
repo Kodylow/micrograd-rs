@@ -67,16 +67,15 @@ impl Value {
         ));
 
         if !self.prev.is_empty() {
-            // Draw operation connector
-            result.push_str(&format!("{}└─ {}\n", prefix, self.op));
+            let new_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
+
+            // Only draw one connector with the operation
+            result.push_str(&format!("{}└─ {}\n", new_prefix, self.op));
 
             // Draw children
-            let last_idx = self.prev.len() - 1;
+            let child_prefix = format!("{}    ", new_prefix);
             for (i, child) in self.prev.iter().enumerate() {
-                let is_last_child = i == last_idx;
-                let child_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
-
-                let connector = if is_last_child {
+                let connector = if i == self.prev.len() - 1 {
                     "└──"
                 } else {
                     "├──"
@@ -85,7 +84,7 @@ impl Value {
                     result,
                     visited,
                     &format!("{}{}", child_prefix, connector),
-                    is_last_child,
+                    i == self.prev.len() - 1,
                 );
             }
         }
