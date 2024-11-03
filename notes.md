@@ -1,169 +1,169 @@
-# Neural Networks & Derivatives Notes
+# Neural Networks & Derivatives
 
-Based on Andrej Karpathy's micrograd & neural nets course
+_Andrej Karpathy's Neural Networks: Zero to Hero_
 
-## Key Concepts
+## Backpropagation Deep Dive
 
-### Derivatives & Backpropagation
+### 1. The Core Idea
 
-- Derivative = slope/rate of change at a point
+Backpropagation = Chain rule applied backwards through a computation graph
 
-  ```rust
-  // Calculate derivative as slope using small change in x
-  let h = 0.0001; // Small delta
+### 2. Simple Example: z = x \* y
 
-  // Initial values
-  let x = 2.0;
-  let y = -3.0;
-  let c = 10.0;
+```rust
+// Forward Pass
+let x = 2.0;    // Input
+let y = 3.0;    // Input
+let z = x * y;  // z = 6.0
 
-  // Calculate f(x) at two nearby points
-  let f1 = x * y + c;
-  let f2 = x * (y + h) + c;
+// Backward Pass
+// dz/dx = y = 3.0    (derivative of z with respect to x is y)
+// dz/dy = x = 2.0    (derivative of z with respect to y is x)
 
-  // Slope = change in y / change in x
-  let derivative = (f2 - f1) / h;
-  println!("Derivative (slope) at x={}: {}", x, derivative);
-  ```
+// If upstream gradient is 1.0:
+x.grad = 1.0 * y  // = 3.0
+y.grad = 1.0 * x  // = 2.0
+```
 
-- Chain rule: derivative of composite functions multiplies derivatives of each part
-- Backpropagation = applying chain rule backwards through computation graph
-- Each node in graph stores:
+### 3. Multi-Step Example
 
-  - Forward pass value
-  - Gradient (derivative) for backward pass
-  - References to input nodes
+```
+     a(2)    b(-3)
+        \    /
+         c(-6)     d(10)
+             \    /
+              L(4)
+```
 
-- Backpropagation explained:
+#### Forward Pass
 
-  1. Forward pass computes values through network
-  2. Backward pass computes gradients by:
-     - Starting at output node with gradient 1.0
-     - Working backwards through graph
-     - At each node:
-       - Compute local gradient (derivative of operation)
-       - Multiply by upstream gradient (chain rule)
-       - Pass gradients to input nodes
+```rust
+let a = Value::new(2.0);   // a = 2
+let b = Value::new(-3.0);  // b = -3
+let c = a * b;             // c = -6
+let d = Value::new(10.0);  // d = 10
+let L = c + d;             // L = 4
+```
 
-  Example with multiplication node:
+#### Backward Pass (Step by Step)
 
-  ```rust
-  // Forward: z = x * y
-  let x = 2.0;
-  let y = 3.0;
-  let z = x * y; // z = 6.0
+1. Start at L (output)
 
-  // Backward:
-  // dz/dx = y = 3.0
-  // dz/dy = x = 2.0
-  // If upstream gradient is 1.0:
-  // x.grad = 1.0 * dz/dx = 3.0
-  // y.grad = 1.0 * dz/dy = 2.0
-  ```
+   ```rust
+   // L = c + d
+   // dL/dL = 1.0 (starting gradient)
+   L.grad = 1.0
+   ```
 
-  Key points:
+2. Addition Node (L = c + d)
 
-  - Local gradients depend on operation type:
-    - Add: gradient = 1.0 for both inputs
-    - Multiply: gradient = other input's value
-    - Divide: more complex derivatives
-  - Chain rule multiplies local gradient by upstream gradient
-  - Gradients flow backwards and accumulate
-  - Each node stores its gradient for optimization
+   ```rust
+   // Addition distributes gradient equally
+   // dL/dc = 1.0
+   // dL/dd = 1.0
+   c.grad = L.grad * 1.0  // = 1.0
+   d.grad = L.grad * 1.0  // = 1.0
+   ```
 
-  This allows automatic computation of derivatives through arbitrary computation graphs, enabling neural network training.
+3. Multiplication Node (c = a \* b)
 
-- Example backpropagation calculation:
+   ```rust
+   // Local derivatives:
+   // dc/da = b = -3.0
+   // dc/db = a = 2.0
 
-  ```rust
-  // Forward pass
-  let a = Value::new(2.0, None, "a".to_string(), None);  // a = 2
-  let b = Value::new(-3.0, None, "b".to_string(), None); // b = -3
-  let c = a.clone() * b.clone();                         // c = a * b = -6
-  let d = Value::new(10.0, None, "d".to_string(), None); // d = 10
-  let L = c + d;                                         // L = c + d = 4
+   // Chain rule:
+   a.grad = c.grad * b    // = 1.0 * (-3.0) = -3.0
+   b.grad = c.grad * a    // = 1.0 * 2.0 = 2.0
+   ```
 
-  // Computation graph:
-  //       a(2)    b(-3)
-  //          \    /
-  //           c(-6)     d(10)
-  //               \    /
-  //                L(4)
+### 4. Common Patterns
 
-  // Backward pass (chain rule):
-  // 1. dL/dL = 1.0 (derivative of output wrt itself)
+#### Addition (+)
 
-  // 2. Derivatives wrt direct inputs to L:
-  //    dL/dd = 1.0 * 1.0 = 1.0  (through + operation)
-  //    dL/dc = 1.0 * 1.0 = 1.0  (through + operation)
+```rust
+// z = x + y
+// dz/dx = 1.0
+// dz/dy = 1.0
 
-  // 3. Derivatives wrt inputs to c:
-  //    dL/da = dL/dc * dc/da = 1.0 * b = -3.0
-  //    dL/db = dL/dc * dc/db = 1.0 * a = 2.0
+// Gradient flows through unchanged
+x.grad = upstream_grad * 1.0
+y.grad = upstream_grad * 1.0
+```
 
-  // Verify with numerical approximation:
-  let h = 0.0001;
+#### Multiplication (\*)
 
-  // Check dL/dd
-  let L1 = (a.clone() * b.clone()) + Value::new(10.0, None, "d".to_string(), None);
-  let L2 = (a.clone() * b.clone()) + Value::new(10.0 + h, None, "d".to_string(), None);
-  let dL_dd = (L2.data - L1.data) / h;  // Should be ~1.0
+```rust
+// z = x * y
+// dz/dx = y
+// dz/dy = x
 
-  // Check dL/da
-  let L1 = (Value::new(2.0, None, "a".to_string(), None) * b.clone()) + d.clone();
-  let L2 = (Value::new(2.0 + h, None, "a".to_string(), None) * b.clone()) + d.clone();
-  let dL_da = (L2.data - L1.data) / h;  // Should be ~-3.0
-  ```
+// Gradient is scaled by other input
+x.grad = upstream_grad * y
+y.grad = upstream_grad * x
+```
 
-### Neural Network Basics
+#### Tanh (Common Activation)
 
-- Neurons = units that:
-  1. Take weighted inputs
-  2. Sum them
-  3. Apply activation function (like tanh)
-- Layers = groups of neurons
-- Forward pass = computing outputs
-- Training loop:
-  1. Forward pass
-  2. Compute loss
-  3. Backward pass (backprop)
-  4. Update weights
+```rust
+// z = tanh(x)
+// dz/dx = 1 - tanh²(x)
 
-### Implementation Details
+// Example:
+let x = 2.0;
+let z = x.tanh();
+// If x = 2.0, tanh(2.0) ≈ 0.964
+// dz/dx = 1 - 0.964² ≈ 0.071
 
-- Value object tracks:
-  - Data (number)
-  - Gradient
-  - Operation that created it
-  - Backward function
-- Neural net components:
-  - Neurons: weighted sum + nonlinearity
-  - Layers: groups of neurons
-  - MLP: stack of layers
+x.grad = upstream_grad * (1.0 - z*z)
+```
 
-### Training Process
+### 5. Visual Intuition
 
-1. Initialize weights randomly
-2. Forward pass through network
-3. Compare output to desired (loss)
-4. Backprop to get gradients
-5. Update weights (w -= learning_rate \* w.grad)
-6. Repeat
+```
+Forward Pass →
+[Input] → [Hidden] → [Output]
+   x    →    h     →    y
 
-### Key Functions
+← Backward Pass
+grad_x ← grad_h  ← grad_y=1.0
+```
 
-- Forward pass:
-  ```rust
-  out = w * x + b  // Linear
-  out = tanh(out)  // Nonlinear
-  ```
-- Backward pass:
-  - Recursively apply chain rule
-  - Accumulate gradients at each node
+Each gradient represents:
 
-## Implementation Notes for Rust
+- How much would the output change
+- If we tweaked this value a tiny bit
+- While keeping everything else constant
 
-- Need graph structure for backprop
-- Use Rc/RefCell for mutable sharing
-- Consider using traits for operations
-- Track dependencies for proper cleanup
+### 6. Key Insights
+
+1. **Local Computation**
+
+   - Each node only needs to know its immediate operation
+   - Complex derivatives emerge from simple local rules
+
+2. **Gradient Flow**
+
+   - Gradients flow backward
+   - Each step multiplies by local derivative
+   - Products can get very small (vanishing gradient)
+   - Products can get very large (exploding gradient)
+
+3. **Practical Implementation**
+
+```rust
+struct Value {
+    data: f64,
+    grad: f64,
+    backward: Box<dyn Fn()>,
+    // Each Value stores its backward function
+    // When called, updates gradients of inputs
+}
+```
+
+### 7. Common Gotchas
+
+- **Initialize gradients to zero** before backward pass
+- **Accumulate gradients** when a value is used multiple times
+- **Topological order** matters during backward pass
+- **Clear gradients** between training steps
