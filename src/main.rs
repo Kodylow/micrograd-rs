@@ -6,6 +6,7 @@
 use anyhow::Result;
 use nn::Value;
 
+mod draw;
 mod engine;
 mod nn;
 
