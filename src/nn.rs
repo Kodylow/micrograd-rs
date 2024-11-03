@@ -6,11 +6,11 @@ use std::{
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Value {
-    pub data: f64,
-    pub prev: Vec<Value>,
-    pub op: String,
-    pub label: String,
-    pub grad: f64,
+    pub(crate) data: f64,
+    pub(crate) prev: Vec<Value>,
+    pub(crate) op: String,
+    pub(crate) label: String,
+    pub(crate) grad: f64,
 }
 
 impl Eq for Value {}
