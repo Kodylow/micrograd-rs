@@ -14,17 +14,27 @@ fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let a = Value::new(2.0, None, "a".to_string(), None);
-    let b = Value::new(-3.0, None, "b".to_string(), None);
-    let c = a.clone() * b.clone();
-    let d = Value::new(10.0, None, "d".to_string(), None);
-    let e = c.clone() + d.clone();
+    // inputs x1, x2
+    let x1 = Value::new(2.0, None, "x1".to_string(), None);
+    let x2 = Value::new(0.0, None, "x2".to_string(), None);
+
+    // weights w1, w2
+    let w1 = Value::new(-3.0, None, "w1".to_string(), None);
+    let w2 = Value::new(1.0, None, "w2".to_string(), None);
+
+    // bias of the neuron
+    let b = Value::new(6.7, None, "b".to_string(), None);
+
+    // compute neuron activation
+    let x1w1 = &x1 * &w1;
+    let x2w2 = &x2 * &w2;
+
+    let x1w1x2w2 = &x1w1 + &x2w2;
+
+    let n = &x1w1x2w2 + &b;
 
     // Print the computation graph
-    println!("{}", e.draw_ascii());
-
-    // Or save to file
-    // c.render_ascii("graph.txt").unwrap();
+    println!("{}", n.draw_ascii());
 
     Ok(())
 }
