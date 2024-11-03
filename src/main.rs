@@ -14,10 +14,10 @@ fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let a = Value::new(2.0, None, None);
-    let b = Value::new(-3.0, None, None);
+    let a = Value::new(2.0, None, "a".to_string(), None);
+    let b = Value::new(-3.0, None, "b".to_string(), None);
     let c = a.clone() * b.clone();
-    let d = Value::new(10.0, None, None);
+    let d = Value::new(10.0, None, "d".to_string(), None);
     let e = c.clone() + d.clone();
 
     // Print the computation graph

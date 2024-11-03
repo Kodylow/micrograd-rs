@@ -5,6 +5,7 @@ pub struct Value {
     data: f64,
     prev: Vec<Value>,
     op: String,
+    label: String,
 }
 
 impl Eq for Value {}
@@ -19,11 +20,12 @@ impl Hash for Value {
 }
 
 impl Value {
-    pub fn new(data: f64, children: Option<Vec<Value>>, op: Option<String>) -> Self {
+    pub fn new(data: f64, children: Option<Vec<Value>>, label: String, op: Option<String>) -> Self {
         Self {
             data,
             prev: children.unwrap_or(vec![]),
             op: op.unwrap_or("".to_string()),
+            label,
         }
     }
 
@@ -61,7 +63,7 @@ impl Value {
 
         // Draw current node
         result.push_str(&indent);
-        result.push_str(&format!("{:.4}\n", self.data));
+        result.push_str(&format!("{:.4} ({})\n", self.data, self.label));
     }
 
     #[allow(dead_code)]
@@ -79,7 +81,8 @@ impl std::ops::Add for Value {
     fn add(self, rhs: Value) -> Value {
         Value::new(
             self.data + rhs.data,
-            Some(vec![self, rhs]),
+            Some(vec![self.clone(), rhs.clone()]),
+            format!("{} + {}", self.label, rhs.label),
             Some("+".to_string()),
         )
     }
@@ -92,7 +95,8 @@ impl std::ops::Mul for Value {
     fn mul(self, rhs: Value) -> Value {
         Value::new(
             self.data * rhs.data,
-            Some(vec![self, rhs]),
+            Some(vec![self.clone(), rhs.clone()]),
+            format!("{} * {}", self.label, rhs.label),
             Some("*".to_string()),
         )
     }
@@ -105,7 +109,8 @@ impl std::ops::Sub for Value {
     fn sub(self, rhs: Value) -> Value {
         Value::new(
             self.data - rhs.data,
-            Some(vec![self, rhs]),
+            Some(vec![self.clone(), rhs.clone()]),
+            format!("{} - {}", self.label, rhs.label),
             Some("-".to_string()),
         )
     }
@@ -118,7 +123,8 @@ impl std::ops::Div for Value {
     fn div(self, rhs: Value) -> Value {
         Value::new(
             self.data / rhs.data,
-            Some(vec![self, rhs]),
+            Some(vec![self.clone(), rhs.clone()]),
+            format!("{} / {}", self.label, rhs.label),
             Some("/".to_string()),
         )
     }
@@ -129,8 +135,8 @@ impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "Value(data={}, prev={:?}, op={})",
-            self.data, self.prev, self.op
+            "Value(data={}, prev={:?}, op={}, label={})",
+            self.data, self.prev, self.op, self.label
         )
     }
 }
