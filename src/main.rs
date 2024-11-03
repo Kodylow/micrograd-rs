@@ -24,7 +24,7 @@ fn main() -> Result<()> {
     let w2 = Value::new(1.0, None, "w2".to_string(), None);
 
     // bias of the neuron
-    let b = Value::new(6.7, None, "b".to_string(), None);
+    let b = Value::new(6.8813735870195432, None, "b".to_string(), None);
 
     // compute neuron activation
     let mut x1w1 = &x1 * &w1;
@@ -39,7 +39,9 @@ fn main() -> Result<()> {
     n.set_label("n".to_string());
 
     let mut o = n.tanh();
+    o.set_grad(1.0);
     o.set_label("o".to_string());
+    // do/dn = 1 - tanh(n)^2 = 1 - o^2
 
     // Print the computation graph
     println!("{}", o.draw_ascii());

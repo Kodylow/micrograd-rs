@@ -4,23 +4,13 @@ use std::{
     ops::{Add, Div, Mul, Sub},
 };
 
-#[derive(Clone, Debug, PartialEq)]
 pub struct Value {
     pub(crate) data: f64,
     pub(crate) prev: Vec<Value>,
     pub(crate) op: String,
     pub(crate) label: String,
     pub(crate) grad: f64,
-}
-
-impl Eq for Value {}
-
-impl Hash for Value {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.data.to_bits().hash(state);
-        self.prev.hash(state);
-        self.op.hash(state);
-    }
+    pub(crate) backward_fn: Option<Box<dyn Fn(&mut Value)>>,
 }
 
 impl Value {
@@ -31,11 +21,16 @@ impl Value {
             op: op.unwrap_or_default(),
             label,
             grad: 0.0,
+            backward_fn: None,
         }
     }
 
     pub fn set_label(&mut self, label: String) {
         self.label = label;
+    }
+
+    pub fn set_grad(&mut self, grad: f64) {
+        self.grad = grad;
     }
 
     fn binary_op(left: impl Borrow<Value>, right: impl Borrow<Value>, op: &str) -> Value {
@@ -48,12 +43,48 @@ impl Value {
             "/" => left.data / right.data,
             _ => unreachable!(),
         };
-        Value::new(
+
+        let mut out = Value::new(
             data,
             Some(vec![left.clone(), right.clone()]),
             format!("({}_{}_{}", left.label, op, right.label),
             Some(op.to_string()),
-        )
+        );
+
+        // Set the backward function based on operation
+        out.backward_fn = match op {
+            "+" => Some(Box::new(|out: &mut Value| {
+                // For addition, gradient flows equally to both inputs
+                // ∂(a+b)/∂a = 1
+                out.prev[0].grad += out.grad;
+                // ∂(a+b)/∂b = 1
+                out.prev[1].grad += out.grad;
+            })),
+            "*" => Some(Box::new(|out: &mut Value| {
+                // For multiplication, gradient flows to each input scaled by the other input
+                // ∂(a*b)/∂a = b
+                out.prev[0].grad += out.prev[1].data * out.grad;
+                // ∂(a*b)/∂b = a
+                out.prev[1].grad += out.prev[0].data * out.grad;
+            })),
+            "-" => Some(Box::new(|out: &mut Value| {
+                // For subtraction, gradient flows to the first input and subtracts from the second
+                // ∂(a-b)/∂a = 1
+                out.prev[0].grad += out.grad;
+                // ∂(a-b)/∂b = -1
+                out.prev[1].grad -= out.grad;
+            })),
+            "/" => Some(Box::new(|out: &mut Value| {
+                // For division (a/b), gradient flows according to quotient rule
+                // ∂(a/b)/∂a = 1/b
+                out.prev[0].grad += out.grad * (1.0 / out.prev[1].data);
+                // ∂(a/b)/∂b = -a/b²
+                out.prev[1].grad += out.grad * (-out.prev[0].data / out.prev[1].data.powi(2));
+            })),
+            _ => None,
+        };
+
+        out
     }
 
     pub fn tanh(&self) -> Value {
@@ -92,6 +123,26 @@ impl_binary_op!(Mul, mul, "*");
 impl_binary_op!(Sub, sub, "-");
 impl_binary_op!(Div, div, "/");
 
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+            && self.prev == other.prev
+            && self.op == other.op
+            && self.label == other.label
+            && self.grad == other.grad
+    }
+}
+
+impl Eq for Value {}
+
+impl Hash for Value {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.data.to_bits().hash(state);
+        self.prev.hash(state);
+        self.op.hash(state);
+    }
+}
+
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
@@ -99,5 +150,30 @@ impl std::fmt::Display for Value {
             "Value(data={}, prev={:?}, op={}, label={})",
             self.data, self.prev, self.op, self.label
         )
+    }
+}
+
+impl std::fmt::Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Value")
+            .field("data", &self.data)
+            .field("prev", &self.prev)
+            .field("op", &self.op)
+            .field("label", &self.label)
+            .field("grad", &self.grad)
+            .finish()
+    }
+}
+
+impl Clone for Value {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data,
+            prev: self.prev.clone(),
+            op: self.op.clone(),
+            label: self.label.clone(),
+            grad: self.grad,
+            backward_fn: None,
+        }
     }
 }
