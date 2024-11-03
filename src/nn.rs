@@ -6,6 +6,7 @@ pub struct Value {
     prev: Vec<Value>,
     op: String,
     label: String,
+    grad: f64,
 }
 
 impl Eq for Value {}
@@ -26,6 +27,7 @@ impl Value {
             prev: children.unwrap_or(vec![]),
             op: op.unwrap_or("".to_string()),
             label,
+            grad: 0.0,
         }
     }
 
@@ -63,7 +65,10 @@ impl Value {
 
         // Draw current node
         result.push_str(&indent);
-        result.push_str(&format!("{:.4} ({})\n", self.data, self.label));
+        result.push_str(&format!(
+            "(data={:.4}, grad={:.4}) {}\n",
+            self.data, self.grad, self.label
+        ));
     }
 
     #[allow(dead_code)]
