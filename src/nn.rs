@@ -64,8 +64,7 @@ impl Value {
 
         if !self.prev.is_empty() {
             // Draw operation connector
-            let op_prefix = if is_last { "    " } else { "│   " };
-            result.push_str(&format!("{}└─{}\n", prefix, self.op));
+            result.push_str(&format!("{}└─ {}\n", prefix, self.op));
 
             // Draw children
             let last_idx = self.prev.len() - 1;
