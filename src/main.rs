@@ -26,12 +26,16 @@ fn main() -> Result<()> {
     let b = Value::new(6.7, None, "b".to_string(), None);
 
     // compute neuron activation
-    let x1w1 = &x1 * &w1;
-    let x2w2 = &x2 * &w2;
+    let mut x1w1 = &x1 * &w1;
+    x1w1.set_label("x1*w1".to_string());
+    let mut x2w2 = &x2 * &w2;
+    x2w2.set_label("x2*w2".to_string());
 
-    let x1w1x2w2 = &x1w1 + &x2w2;
+    let mut x1w1x2w2 = &x1w1 + &x2w2;
+    x1w1x2w2.set_label("x1w1 + x2w2".to_string());
 
-    let n = &x1w1x2w2 + &b;
+    let mut n = &x1w1x2w2 + &b;
+    n.set_label("n".to_string());
 
     // Print the computation graph
     println!("{}", n.draw_ascii());

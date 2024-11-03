@@ -34,6 +34,10 @@ impl Value {
         }
     }
 
+    pub fn set_label(&mut self, label: String) {
+        self.label = label;
+    }
+
     pub fn draw_ascii(&self) -> String {
         let mut result = String::new();
         let mut visited = std::collections::HashSet::new();
@@ -105,7 +109,7 @@ impl Value {
         Value::new(
             data,
             Some(vec![left.clone(), right.clone()]),
-            format!("{} {} {}", left.label, op, right.label),
+            format!("({}_{}_{}", left.label, op, right.label),
             Some(op.to_string()),
         )
     }
