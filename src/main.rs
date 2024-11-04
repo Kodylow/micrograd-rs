@@ -4,8 +4,12 @@
 //! minimal yet feature-complete implementation.
 
 use anyhow::Result;
+
 use engine::Value;
-use plotters::prelude::*;
+use rand::prelude::SliceRandom;
+
+use rand::thread_rng;
+use viz::load_training_data;
 
 use crate::nn::Module;
 
@@ -68,37 +72,15 @@ fn run_values_example() -> Result<()> {
 }
 
 fn run_nn_example() -> Result<()> {
-    // Create a simple dataset: XOR problem
-    let xs = vec![
-        (
-            vec![
-                Value::new(0.0, None, "x0".to_string(), None),
-                Value::new(0.0, None, "x1".to_string(), None),
-            ],
-            Value::new(0.0, None, "y".to_string(), None),
-        ),
-        (
-            vec![
-                Value::new(0.0, None, "x0".to_string(), None),
-                Value::new(1.0, None, "x1".to_string(), None),
-            ],
-            Value::new(1.0, None, "y".to_string(), None),
-        ),
-        (
-            vec![
-                Value::new(1.0, None, "x0".to_string(), None),
-                Value::new(0.0, None, "x1".to_string(), None),
-            ],
-            Value::new(1.0, None, "y".to_string(), None),
-        ),
-        (
-            vec![
-                Value::new(1.0, None, "x0".to_string(), None),
-                Value::new(1.0, None, "x1".to_string(), None),
-            ],
-            Value::new(0.0, None, "y".to_string(), None),
-        ),
-    ];
+    // Load dataset from CSV
+    let mut xs = load_training_data("xor_data.csv")?;
+
+    // Shuffle the dataset
+    xs.shuffle(&mut thread_rng());
+
+    // Calculate split index (80% train, 20% test)
+    let split_idx = (xs.len() as f64 * 0.8) as usize;
+    let (train_data, test_data) = xs.split_at(split_idx);
 
     // Create a 2-layer neural network (2->4->1)
     let mut model = nn::MLP::new(2, &vec![4, 1]);
@@ -108,23 +90,16 @@ fn run_nn_example() -> Result<()> {
     for epoch in 0..100 {
         let mut epoch_loss = 0.0;
 
-        for (x, y) in &xs {
-            // Forward pass
+        for (x, y) in train_data {
             let pred = model.forward(x.to_vec())[0].clone();
-
-            // Calculate loss (MSE)
             let loss = (&pred - y).pow(2.0);
             epoch_loss += loss.data();
-
-            // Backward pass
             model.zero_grad();
             loss.backward();
-
-            // Update weights (SGD)
             model.update_weights(0.1);
         }
 
-        epoch_loss /= xs.len() as f64;
+        epoch_loss /= train_data.len() as f64;
         losses.push(epoch_loss);
 
         if epoch % 10 == 0 {
@@ -132,43 +107,35 @@ fn run_nn_example() -> Result<()> {
         }
     }
 
-    // Plot the loss curve
-    plot_losses(&losses, "training_loss.png")?;
+    viz::plot_losses(&losses, "training_loss.png")?;
 
-    // Test the model
-    for (x, y) in &xs {
+    // Evaluate on test set
+    println!("\n--- Test Set Evaluation ---");
+    let mut test_correct = 0;
+    let mut test_error = 0.0;
+    for (x, y) in test_data {
         let pred = model.forward(x.to_vec())[0].clone();
+        let error = (pred.data() - y.data()).abs();
+        test_error += error;
+        if error < 0.5 {
+            test_correct += 1;
+        }
         println!(
-            "Input: {:?}, Target: {}, Prediction: {:.4}",
-            x,
-            y,
+            "Input: ({:.1}, {:.1}), Target: {:.1}, Predicted: {:.1}",
+            x[0].data(),
+            x[1].data(),
+            y.data(),
             pred.data()
         );
     }
-
-    Ok(())
-}
-
-fn plot_losses(losses: &[f64], filename: &str) -> Result<()> {
-    let root = BitMapBackend::new(filename, (640, 480)).into_drawing_area();
-    root.fill(&WHITE)?;
-
-    let mut chart = ChartBuilder::on(&root)
-        .caption("Training Loss", ("sans-serif", 50).into_font())
-        .margin(5)
-        .x_label_area_size(30)
-        .y_label_area_size(30)
-        .build_cartesian_2d(
-            0f64..losses.len() as f64,
-            0f64..losses.iter().copied().fold(0. / 0., f64::max),
-        )?;
-
-    chart.configure_mesh().draw()?;
-
-    chart.draw_series(LineSeries::new(
-        losses.iter().enumerate().map(|(i, &v)| (i as f64, v)),
-        &RED,
-    ))?;
+    println!(
+        "\nTest Accuracy: {:.1}%",
+        (test_correct as f64 / test_data.len() as f64) * 100.0
+    );
+    println!(
+        "Test Average Error: {:.4}",
+        test_error / test_data.len() as f64
+    );
 
     Ok(())
 }

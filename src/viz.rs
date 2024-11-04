@@ -2,6 +2,11 @@ use crate::Value;
 use colored::*;
 use std::collections::HashSet;
 
+use anyhow::Result;
+use csv::Reader;
+use plotters::prelude::*;
+use std::fs::File;
+
 pub struct BackpropViz {
     pub active_nodes: HashSet<usize>,
     pub completed_nodes: HashSet<usize>,
@@ -79,4 +84,51 @@ impl BackpropViz {
             }
         }
     }
+}
+
+pub fn plot_losses(losses: &[f64], filename: &str) -> Result<()> {
+    let root = BitMapBackend::new(filename, (640, 480)).into_drawing_area();
+    root.fill(&WHITE)?;
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption("Training Loss", ("sans-serif", 50).into_font())
+        .margin(5)
+        .x_label_area_size(30)
+        .y_label_area_size(30)
+        .build_cartesian_2d(
+            0f64..losses.len() as f64,
+            0f64..losses.iter().copied().fold(0. / 0., f64::max),
+        )?;
+
+    chart.configure_mesh().draw()?;
+
+    chart.draw_series(LineSeries::new(
+        losses.iter().enumerate().map(|(i, &v)| (i as f64, v)),
+        &RED,
+    ))?;
+
+    Ok(())
+}
+
+pub fn load_training_data(filename: &str) -> Result<Vec<(Vec<Value>, Value)>> {
+    let file = File::open(filename)?;
+    let mut reader = Reader::from_reader(file);
+    let mut training_data = Vec::new();
+
+    for result in reader.records() {
+        let record = result?;
+        let x0: f64 = record[0].parse()?;
+        let x1: f64 = record[1].parse()?;
+        let target: f64 = record[2].parse()?;
+
+        training_data.push((
+            vec![
+                Value::new(x0, None, "x0".to_string(), None),
+                Value::new(x1, None, "x1".to_string(), None),
+            ],
+            Value::new(target, None, "y".to_string(), None),
+        ));
+    }
+
+    Ok(training_data)
 }
