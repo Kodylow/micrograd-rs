@@ -1,9 +1,12 @@
 use std::{
     borrow::Borrow,
+    collections::HashSet,
     hash::{Hash, Hasher},
     ops::{Add, Div, Mul, Sub},
     sync::Arc,
 };
+
+use crate::viz::BackpropViz;
 
 pub struct Value {
     pub(crate) data: f64,
@@ -35,15 +38,33 @@ impl Value {
     }
 
     pub fn backward(&mut self) {
-        // First, call the backward function if it exists
+        let mut viz = BackpropViz::new();
+        self.backward_with_viz(&mut viz)
+    }
+
+    fn backward_with_viz(&mut self, viz: &mut BackpropViz) {
+        let ptr = self as *const Value as usize;
+        viz.active_nodes.insert(ptr);
+
         if let Some(backward_fn) = self.backward_fn.take() {
+            let desc = format!(
+                "Computing gradient for node '{}'\n\
+                Current value: {:.4}\n\
+                Current gradient: {:.4}\n\
+                Operation: {}",
+                self.label, self.data, self.grad, self.op
+            );
+            viz.draw_step(self, &desc);
+
             backward_fn(self);
             self.backward_fn = Some(backward_fn);
+
+            viz.completed_nodes.insert(ptr);
+            viz.active_nodes.remove(&ptr);
         }
 
-        // Then recursively call backward on all children
         for child in &mut self.prev {
-            child.backward();
+            child.backward_with_viz(viz);
         }
     }
 
@@ -119,6 +140,29 @@ impl Value {
             out.prev[0].grad += (1.0 - t * t) * out.grad;
         }));
         out
+    }
+
+    pub fn build_topo(&self) -> Vec<Value> {
+        let mut topo = Vec::new();
+        let mut visited = HashSet::new();
+
+        fn build_topo_recursive(v: &Value, topo: &mut Vec<Value>, visited: &mut HashSet<usize>) {
+            let ptr = v as *const Value as usize;
+            if !visited.contains(&ptr) {
+                visited.insert(ptr);
+
+                // Recursively visit all children first
+                for child in &v.prev {
+                    build_topo_recursive(child, topo, visited);
+                }
+
+                // Add current node after all children
+                topo.push(v.clone());
+            }
+        }
+
+        build_topo_recursive(self, &mut topo, &mut visited);
+        topo
     }
 }
 

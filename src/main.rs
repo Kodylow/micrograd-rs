@@ -4,11 +4,12 @@
 //! minimal yet feature-complete implementation.
 
 use anyhow::Result;
-use nn::Value;
+use value::Value;
 
 mod draw;
 mod engine;
-mod nn;
+mod value;
+mod viz;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
