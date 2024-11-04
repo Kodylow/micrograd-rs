@@ -1,46 +1,43 @@
-use std::rc::Rc;
-
-use crate::engine::{Value, ValueRef};
+use crate::engine::Value;
 use rand::Rng;
 
 /// Base trait for neural network modules
 pub trait Module {
-    fn parameters(&self) -> Vec<ValueRef>;
+    fn parameters(&self) -> Vec<Value>;
 
-    fn zero_grad(&self) {
-        for p in self.parameters() {
-            p.borrow_mut().grad = 0.0;
+    fn zero_grad(&mut self) {
+        for mut p in self.parameters() {
+            p.set_grad(0.0);
         }
     }
 }
 
 /// Single neuron with weights, bias, and optional nonlinearity
 pub struct Neuron {
-    w: Vec<ValueRef>,
-    b: ValueRef,
+    w: Vec<Value>,
+    b: Value,
     nonlin: bool,
 }
 
 impl Neuron {
     pub fn new(nin: usize, nonlin: bool) -> Self {
         let mut rng = rand::thread_rng();
-        let w = (0..nin)
-            .map(|i| Value::new(rng.gen_range(-1.0..1.0), None, format!("w{}", i), None))
-            .collect();
-        let b = Value::new(0.0, None, "b".to_string(), None);
-        Self { w, b, nonlin }
+        Self {
+            w: (0..nin)
+                .map(|i| Value::new(rng.gen_range(-1.0..1.0), None, format!("w{}", i), None))
+                .collect(),
+            b: Value::new(0.0, None, "b".to_string(), None),
+            nonlin,
+        }
     }
 
-    pub fn forward(&self, x: &[ValueRef]) -> ValueRef {
-        let act = self
-            .w
-            .iter()
-            .zip(x.iter())
-            .fold(Rc::clone(&self.b), |sum, (wi, xi)| {
-                &sum + &(wi.borrow().clone() * xi.borrow().clone())
-            });
+    pub fn forward(&self, x: &[Value]) -> Value {
+        let mut act = self.b.clone();
+        for (wi, xi) in self.w.iter().zip(x.iter()) {
+            act = &act + &(wi * xi);
+        }
         if self.nonlin {
-            Value::relu(&act)
+            act.relu()
         } else {
             act
         }
@@ -48,9 +45,9 @@ impl Neuron {
 }
 
 impl Module for Neuron {
-    fn parameters(&self) -> Vec<ValueRef> {
+    fn parameters(&self) -> Vec<Value> {
         let mut params = self.w.clone();
-        params.push(Rc::clone(&self.b));
+        params.push(self.b.clone());
         params
     }
 }
@@ -62,17 +59,18 @@ pub struct Layer {
 
 impl Layer {
     pub fn new(nin: usize, nout: usize, nonlin: bool) -> Self {
-        let neurons = (0..nout).map(|_| Neuron::new(nin, nonlin)).collect();
-        Self { neurons }
+        Self {
+            neurons: (0..nout).map(|_| Neuron::new(nin, nonlin)).collect(),
+        }
     }
 
-    pub fn forward(&self, x: &[ValueRef]) -> Vec<ValueRef> {
+    pub fn forward(&self, x: &[Value]) -> Vec<Value> {
         self.neurons.iter().map(|n| n.forward(x)).collect()
     }
 }
 
 impl Module for Layer {
-    fn parameters(&self) -> Vec<ValueRef> {
+    fn parameters(&self) -> Vec<Value> {
         self.neurons.iter().flat_map(|n| n.parameters()).collect()
     }
 }
@@ -84,47 +82,32 @@ pub struct MLP {
 
 impl MLP {
     pub fn new(nin: usize, nouts: &[usize]) -> Self {
-        let sizes = std::iter::once(&nin)
-            .chain(nouts.iter())
-            .collect::<Vec<_>>();
-        let layers = sizes
-            .windows(2)
-            .enumerate()
-            .map(|(i, w)| {
+        let mut sizes = vec![nin];
+        sizes.extend_from_slice(nouts);
+
+        let layers = (0..nouts.len())
+            .map(|i| {
                 Layer::new(
-                    *w[0],
-                    *w[1],
-                    i != nouts.len() - 1, // Nonlinearity except for last layer
+                    sizes[i],
+                    sizes[i + 1],
+                    i != nouts.len() - 1, // nonlin=false for last layer
                 )
             })
             .collect();
+
         Self { layers }
     }
 
-    pub fn forward(&self, x: Vec<ValueRef>) -> Vec<ValueRef> {
-        let mut output = x;
+    pub fn forward(&self, mut x: Vec<Value>) -> Vec<Value> {
         for layer in &self.layers {
-            output = layer.forward(&output);
+            x = layer.forward(&x);
         }
-        output
-    }
-
-    pub fn layer_outputs(&self, x: Vec<ValueRef>) -> Vec<Vec<ValueRef>> {
-        let mut outputs = Vec::new();
-        let mut current = x;
-        outputs.push(current.clone());
-
-        for layer in &self.layers {
-            current = layer.forward(&current);
-            outputs.push(current.clone());
-        }
-
-        outputs
+        x
     }
 }
 
 impl Module for MLP {
-    fn parameters(&self) -> Vec<ValueRef> {
+    fn parameters(&self) -> Vec<Value> {
         self.layers.iter().flat_map(|l| l.parameters()).collect()
     }
 }
