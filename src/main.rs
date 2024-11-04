@@ -4,11 +4,10 @@
 //! minimal yet feature-complete implementation.
 
 use anyhow::Result;
-use value::Value;
+use engine::Value;
 
 mod draw;
 mod engine;
-mod value;
 mod viz;
 
 fn main() -> Result<()> {
