@@ -8,6 +8,7 @@ use engine::Value;
 
 mod draw;
 mod engine;
+mod nn;
 mod viz;
 
 fn main() -> Result<()> {
