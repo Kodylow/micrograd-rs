@@ -3,31 +3,27 @@
 //! enabling backpropagation for gradient-based optimization.
 
 use std::{
-    borrow::Borrow,
+    cell::RefCell,
     collections::HashSet,
-    hash::{Hash, Hasher},
     ops::{Add, Div, Mul, Sub},
-    sync::Arc,
+    rc::Rc,
 };
-
-use crate::viz::BackpropViz;
 
 /// A node in the computation graph that tracks both forward computation and gradients for backprop.
 /// Each Value represents a scalar value and its gradient with respect to some loss function.
-pub struct Value {
-    /// The actual scalar value stored at this node
-    pub(crate) data: f64,
-    /// References to input Values that were used to compute this Value
-    pub(crate) prev: Vec<Value>,
-    /// The operation that produced this Value (e.g. "+", "*", "tanh")
-    pub(crate) op: String,
-    /// A human-readable label for debugging and visualization
-    pub(crate) label: String,
-    /// The gradient of the final output with respect to this Value (∂out/∂self)
-    pub(crate) grad: f64,
-    /// Function to compute gradients during backprop using the chain rule
-    pub(crate) backward_fn: Option<Arc<dyn Fn(&mut Value) + Send + Sync>>,
+#[derive(Clone)]
+pub struct Value(Rc<RefCell<ValueInternal>>);
+
+struct ValueInternal {
+    data: f64,
+    grad: f64,
+    prev: Vec<Value>,
+    op: String,
+    pub label: String,
+    backward_fn: Option<BackwardFn>,
 }
+
+type BackwardFn = Box<dyn Fn(&ValueInternal) + 'static>;
 
 impl Value {
     /// Creates a new Value node in the computation graph.
@@ -38,135 +34,152 @@ impl Value {
     /// * `label` - Human-readable name for debugging
     /// * `op` - Optional operation that produced this Value
     pub fn new(data: f64, children: Option<Vec<Value>>, label: String, op: Option<String>) -> Self {
-        Self {
+        Value(Rc::new(RefCell::new(ValueInternal {
             data,
+            grad: 0.0,
             prev: children.unwrap_or_default(),
             op: op.unwrap_or_default(),
             label,
-            grad: 0.0, // Gradients start at zero before backprop
             backward_fn: None,
-        }
+        })))
+    }
+
+    /// Returns the scalar value stored in this node
+    pub fn data(&self) -> f64 {
+        self.0.borrow().data
+    }
+
+    /// Returns the label of this node
+    pub fn label(&self) -> String {
+        self.0.borrow().label.clone()
+    }
+
+    /// Returns the operation of this node
+    pub fn op(&self) -> String {
+        self.0.borrow().op.clone()
+    }
+
+    /// Returns the gradient of this node
+    pub fn grad(&self) -> f64 {
+        self.0.borrow().grad
+    }
+
+    /// Returns the previous nodes of this node
+    pub fn prev(&self) -> Vec<Value> {
+        self.0.borrow().prev.clone()
     }
 
     /// Updates the node's label
-    pub fn set_label(&mut self, label: String) {
-        self.label = label;
+    pub fn set_label(&self, label: String) {
+        self.0.borrow_mut().label = label;
     }
 
     /// Sets the gradient for this node
-    pub fn set_grad(&mut self, grad: f64) {
-        self.grad = grad;
+    pub fn set_grad(&self, grad: f64) {
+        self.0.borrow_mut().grad = grad;
     }
 
     /// Initiates backpropagation from this node.
     /// This computes ∂self/∂x for all nodes x in the graph.
-    pub fn backward(&mut self) {
-        let mut viz = BackpropViz::new();
-        self.backward_with_viz(&mut viz)
+    pub fn backward(&self) {
+        self.0.borrow_mut().grad = 1.0;
+        let mut visited = HashSet::new();
+        self.backward_internal(&mut visited);
     }
 
     /// Internal implementation of backprop that includes visualization.
     /// Uses the chain rule to propagate gradients backward through the graph:
     /// If y = f(x) and x = g(w), then ∂L/∂w = (∂L/∂y)(∂y/∂x)(∂x/∂w)
-    fn backward_with_viz(&mut self, viz: &mut BackpropViz) {
-        let ptr = self as *const Value as usize;
-        viz.active_nodes.insert(ptr);
+    fn backward_internal(&self, visited: &mut HashSet<usize>) {
+        let ptr = Rc::as_ptr(&self.0) as usize;
+        if visited.insert(ptr) {
+            let internal = self.0.borrow();
+            if let Some(ref backward_fn) = internal.backward_fn {
+                backward_fn(&internal);
+            }
 
-        if let Some(backward_fn) = self.backward_fn.take() {
-            let desc = format!(
-                "Computing gradient for node '{}'\n\
-                Current value: {:.4}\n\
-                Current gradient: {:.4}\n\
-                Operation: {}",
-                self.label, self.data, self.grad, self.op
-            );
-            viz.draw_step(self, &desc);
+            // Clone prev to avoid borrow issues
+            let prev = internal.prev.clone();
+            drop(internal);
 
-            backward_fn(self);
-            self.backward_fn = Some(backward_fn);
-
-            viz.completed_nodes.insert(ptr);
-            viz.active_nodes.remove(&ptr);
-        }
-
-        for child in &mut self.prev {
-            child.backward_with_viz(viz);
+            for child in prev {
+                child.backward_internal(visited);
+            }
         }
     }
 
     /// Implements binary operations (+, -, *, /) between Values.
     /// Each operation stores its inputs and a closure for computing gradients.
-    fn binary_op(left: impl Borrow<Value>, right: impl Borrow<Value>, op: &str) -> Value {
-        let left = left.borrow();
-        let right = right.borrow();
+    fn binary_op(left: &Value, right: &Value, op: &str) -> Value {
         let data = match op {
-            "+" => left.data + right.data,
-            "*" => left.data * right.data,
-            "-" => left.data - right.data,
-            "/" => left.data / right.data,
+            "+" => left.data() + right.data(),
+            "*" => left.data() * right.data(),
+            "-" => left.data() - right.data(),
+            "/" => left.data() / right.data(),
             _ => unreachable!(),
         };
 
-        let mut out = Value::new(
+        let out = Value::new(
             data,
             Some(vec![left.clone(), right.clone()]),
-            format!("({}_{}_{}", left.label, op, right.label),
+            format!(
+                "({}_{}_{}",
+                left.0.borrow().label,
+                op,
+                right.0.borrow().label
+            ),
             Some(op.to_string()),
         );
 
-        // Each operation must implement its own gradient computation based on calculus rules
-        out.backward_fn = match op {
-            "+" => Some(Arc::new(|out: &mut Value| {
-                // Addition: z = x + y
-                // ∂z/∂x = 1, ∂z/∂y = 1
-                out.prev[0].grad += out.grad; // ∂z/∂x = 1
-                out.prev[1].grad += out.grad; // ∂z/∂y = 1
+        // Set backward functions with proper closure captures
+        let backward_fn: Option<BackwardFn> = match op {
+            "+" => Some(Box::new(move |out| {
+                let g = out.grad;
+                out.prev[0].0.borrow_mut().grad += g;
+                out.prev[1].0.borrow_mut().grad += g;
             })),
-            "*" => Some(Arc::new(|out: &mut Value| {
-                // Multiplication: z = x * y
-                // ∂z/∂x = y, ∂z/∂y = x
-                out.prev[0].grad += out.prev[1].data * out.grad; // ∂z/∂x = y
-                out.prev[1].grad += out.prev[0].data * out.grad; // ∂z/∂y = x
+            "*" => Some(Box::new(move |out| {
+                let g = out.grad;
+                out.prev[0].0.borrow_mut().grad += out.prev[1].data() * g;
+                out.prev[1].0.borrow_mut().grad += out.prev[0].data() * g;
             })),
-            "-" => Some(Arc::new(|out: &mut Value| {
-                // Subtraction: z = x - y
-                // ∂z/∂x = 1, ∂z/∂y = -1
-                out.prev[0].grad += out.grad; // ∂z/∂x = 1
-                out.prev[1].grad -= out.grad; // ∂z/∂y = -1
+            "-" => Some(Box::new(move |out| {
+                let g = out.grad;
+                out.prev[0].0.borrow_mut().grad += g;
+                out.prev[1].0.borrow_mut().grad -= g;
             })),
-            "/" => Some(Arc::new(|out: &mut Value| {
-                // Division: z = x/y
-                // ∂z/∂x = 1/y
-                // ∂z/∂y = -x/y²
-                out.prev[0].grad += out.grad * (1.0 / out.prev[1].data); // ∂z/∂x = 1/y
-                out.prev[1].grad += out.grad * (-out.prev[0].data / out.prev[1].data.powi(2));
-                // ∂z/∂y = -x/y²
+            "/" => Some(Box::new(move |out| {
+                let g = out.grad;
+                out.prev[0].0.borrow_mut().grad += g * (1.0 / out.prev[1].data());
+                out.prev[1].0.borrow_mut().grad +=
+                    out.grad * (-out.prev[0].data() / out.prev[1].data().powi(2));
             })),
             _ => None,
         };
 
+        out.0.borrow_mut().backward_fn = backward_fn;
         out
     }
 
     /// Implements hyperbolic tangent activation function.
     /// tanh(x) = (e^x - e^-x)/(e^x + e^-x)
     pub fn tanh(&self) -> Value {
-        let x = self.data;
+        let x = self.data();
         let exp_pos = x.exp();
         let exp_neg = (-x).exp();
         let t = (exp_pos - exp_neg) / (exp_pos + exp_neg);
-        let mut out = Value::new(
+        let out = Value::new(
             t,
             Some(vec![self.clone()]),
-            format!("tanh({})", self.label),
+            format!("tanh({})", self.0.borrow().label),
             Some("tanh".to_string()),
         );
 
-        out.backward_fn = Some(Arc::new(|out: &mut Value| {
+        out.0.borrow_mut().backward_fn = Some(Box::new(move |out| {
             // For tanh(x), the derivative is:
             // ∂tanh(x)/∂x = 1 - tanh²(x)
             let t = out.data; // t is already the tanh result
-            out.prev[0].grad += (1.0 - t * t) * out.grad;
+            out.prev[0].0.borrow_mut().grad += (1.0 - t * t) * out.grad;
         }));
         out
     }
@@ -178,12 +191,12 @@ impl Value {
         let mut visited = HashSet::new();
 
         fn build_topo_recursive(v: &Value, topo: &mut Vec<Value>, visited: &mut HashSet<usize>) {
-            let ptr = v as *const Value as usize;
+            let ptr = Rc::as_ptr(&v.0) as usize;
             if !visited.contains(&ptr) {
                 visited.insert(ptr);
 
                 // Visit all dependencies first
-                for child in &v.prev {
+                for child in &v.0.borrow().prev {
                     build_topo_recursive(child, topo, visited);
                 }
 
@@ -198,16 +211,17 @@ impl Value {
 
     /// Implements power function x^n.
     pub fn pow(&self, exponent: f64) -> Value {
-        let mut out = Value::new(
-            self.data.powf(exponent),
+        let out = Value::new(
+            self.data().powf(exponent),
             Some(vec![self.clone()]),
-            format!("{}^{}", self.label, exponent),
+            format!("{}^{}", self.0.borrow().label, exponent),
             Some("pow".to_string()),
         );
 
-        out.backward_fn = Some(Arc::new(move |out: &mut Value| {
+        out.0.borrow_mut().backward_fn = Some(Box::new(move |out| {
             // Power rule: ∂(x^n)/∂x = n * x^(n-1)
-            out.prev[0].grad += exponent * out.prev[0].data.powf(exponent - 1.0) * out.grad;
+            out.prev[0].0.borrow_mut().grad +=
+                exponent * out.prev[0].data().powf(exponent - 1.0) * out.grad;
         }));
         out
     }
@@ -215,112 +229,47 @@ impl Value {
     /// Implements ReLU (Rectified Linear Unit) activation function.
     /// ReLU(x) = max(0, x)
     pub fn relu(&self) -> Value {
-        let mut out = Value::new(
-            if self.data > 0.0 { self.data } else { 0.0 },
+        let out = Value::new(
+            if self.data() > 0.0 { self.data() } else { 0.0 },
             Some(vec![self.clone()]),
-            format!("relu({})", self.label),
+            format!("relu({})", self.0.borrow().label),
             Some("relu".to_string()),
         );
 
-        out.backward_fn = Some(Arc::new(|out: &mut Value| {
+        out.0.borrow_mut().backward_fn = Some(Box::new(move |out| {
             // ReLU derivative:
             // ∂ReLU(x)/∂x = 1 if x > 0, else 0
-            out.prev[0].grad += if out.data > 0.0 { out.grad } else { 0.0 };
+            out.prev[0].0.borrow_mut().grad += if out.data > 0.0 { out.grad } else { 0.0 };
         }));
         out
     }
 }
 
-/// Macro to implement binary operations for Value types
-macro_rules! impl_binary_op {
-    ($trait:ident, $fn:ident, $op:expr) => {
-        impl $trait for Value {
-            type Output = Value;
-            fn $fn(self, rhs: Value) -> Value {
-                Value::binary_op(self, rhs, $op)
-            }
-        }
-        impl $trait for &Value {
-            type Output = Value;
-            fn $fn(self, rhs: &Value) -> Value {
-                Value::binary_op(self, rhs, $op)
-            }
-        }
-    };
-}
-
-impl_binary_op!(Add, add, "+");
-impl_binary_op!(Mul, mul, "*");
-impl_binary_op!(Sub, sub, "-");
-impl_binary_op!(Div, div, "/");
-
-// Standard trait implementations for Value type
-impl PartialEq for Value {
-    fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
-            && self.prev == other.prev
-            && self.op == other.op
-            && self.label == other.label
-            && self.grad == other.grad
-    }
-}
-
-impl Eq for Value {}
-
-impl Hash for Value {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.data.to_bits().hash(state);
-        self.prev.hash(state);
-        self.op.hash(state);
-    }
-}
-
-impl std::fmt::Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "Value(data={}, prev={:?}, op={}, label={})",
-            self.data, self.prev, self.op, self.label
-        )
-    }
-}
-
-impl std::fmt::Debug for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Value")
-            .field("data", &self.data)
-            .field("prev", &self.prev)
-            .field("op", &self.op)
-            .field("label", &self.label)
-            .field("grad", &self.grad)
-            .finish()
-    }
-}
-
-impl Clone for Value {
-    fn clone(&self) -> Self {
-        Self {
-            data: self.data,
-            prev: self.prev.clone(),
-            op: self.op.clone(),
-            label: self.label.clone(),
-            grad: self.grad,
-            backward_fn: self.backward_fn.clone(),
-        }
-    }
-}
-
-// Implementations for scalar operations with Value
-impl Add<f64> for Value {
+// Implement ops traits
+impl Add for &Value {
     type Output = Value;
-    fn add(self, rhs: f64) -> Value {
-        self + Value::new(rhs, None, rhs.to_string(), None)
+    fn add(self, rhs: &Value) -> Value {
+        Value::binary_op(self, rhs, "+")
     }
 }
 
-impl Add<Value> for f64 {
+impl Sub for &Value {
     type Output = Value;
-    fn add(self, rhs: Value) -> Value {
-        Value::new(self, None, self.to_string(), None) + rhs
+    fn sub(self, rhs: &Value) -> Value {
+        Value::binary_op(self, rhs, "-")
+    }
+}
+
+impl Mul for &Value {
+    type Output = Value;
+    fn mul(self, rhs: &Value) -> Value {
+        Value::binary_op(self, rhs, "*")
+    }
+}
+
+impl Div for &Value {
+    type Output = Value;
+    fn div(self, rhs: &Value) -> Value {
+        Value::binary_op(self, rhs, "/")
     }
 }

@@ -50,9 +50,9 @@ impl BackpropViz {
             "{}{} {} [data={:.4}, grad={:.4}]",
             prefix,
             if is_last { "└─" } else { "├─" },
-            value.label,
-            value.data,
-            value.grad
+            value.label(),
+            value.data(),
+            value.grad()
         );
 
         let colored_str = if self.active_nodes.contains(&ptr) {
@@ -65,16 +65,16 @@ impl BackpropViz {
 
         result.push_str(&format!("{}\n", colored_str));
 
-        if !value.prev.is_empty() {
+        if !value.prev().is_empty() {
             let new_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
 
-            for (i, child) in value.prev.iter().enumerate() {
+            for (i, child) in value.prev().iter().enumerate() {
                 self.draw_node_recursive(
                     child,
                     result,
                     visited,
                     &new_prefix,
-                    i == value.prev.len() - 1,
+                    i == value.prev().len() - 1,
                 );
             }
         }

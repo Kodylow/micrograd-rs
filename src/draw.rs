@@ -24,17 +24,17 @@ impl Value {
         result.push_str(&format!(
             "{}{} {}\n",
             prefix,
-            format!("[{:.4}, {:.4}]", self.data, self.grad),
-            self.label
+            format!("[{:.4}, {:.4}]", self.data(), self.grad()),
+            self.label()
         ));
 
-        if !self.prev.is_empty() {
+        if !self.prev().is_empty() {
             let new_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
-            result.push_str(&format!("{}└─ {}\n", new_prefix, self.op));
+            result.push_str(&format!("{}└─ {}\n", new_prefix, self.op()));
 
             let child_prefix = format!("{}    ", new_prefix);
-            for (i, child) in self.prev.iter().enumerate() {
-                let connector = if i == self.prev.len() - 1 {
+            for (i, child) in self.prev().iter().enumerate() {
+                let connector = if i == self.prev().len() - 1 {
                     "└──"
                 } else {
                     "├──"
@@ -43,7 +43,7 @@ impl Value {
                     result,
                     visited,
                     &format!("{}{}", child_prefix, connector),
-                    i == self.prev.len() - 1,
+                    i == self.prev().len() - 1,
                 );
             }
         }

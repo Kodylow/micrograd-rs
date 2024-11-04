@@ -28,18 +28,18 @@ fn main() -> Result<()> {
     let b = Value::new(6.8813735870195432, None, "b".to_string(), None);
 
     // compute neuron activation
-    let mut x1w1 = &x1 * &w1;
+    let x1w1 = &x1 * &w1;
     x1w1.set_label("x1*w1".to_string());
-    let mut x2w2 = &x2 * &w2;
+    let x2w2 = &x2 * &w2;
     x2w2.set_label("x2*w2".to_string());
 
-    let mut x1w1x2w2 = &x1w1 + &x2w2;
+    let x1w1x2w2 = &x1w1 + &x2w2;
     x1w1x2w2.set_label("x1w1 + x2w2".to_string());
 
-    let mut n = &x1w1x2w2 + &b;
+    let n = &x1w1x2w2 + &b;
     n.set_label("n".to_string());
 
-    let mut o = n.tanh();
+    let o = n.tanh();
     o.set_label("o".to_string());
     // do/dn = 1 - tanh(n)^2 = 1 - o^2
 
