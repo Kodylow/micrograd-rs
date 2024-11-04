@@ -5,6 +5,7 @@
 use std::{
     cell::RefCell,
     collections::HashSet,
+    fmt::{Debug, Display},
     ops::{Add, Div, Mul, Sub},
     rc::Rc,
 };
@@ -49,6 +50,11 @@ impl Value {
         self.0.borrow().data
     }
 
+    /// Sets the scalar value stored in this node
+    pub fn set_data(&self, data: f64) {
+        self.0.borrow_mut().data = data;
+    }
+
     /// Returns the label of this node
     pub fn label(&self) -> String {
         self.0.borrow().label.clone()
@@ -64,6 +70,11 @@ impl Value {
         self.0.borrow().grad
     }
 
+    /// Sets the gradient of this node
+    pub fn set_grad(&self, grad: f64) {
+        self.0.borrow_mut().grad = grad;
+    }
+
     /// Returns the previous nodes of this node
     pub fn prev(&self) -> Vec<Value> {
         self.0.borrow().prev.clone()
@@ -72,11 +83,6 @@ impl Value {
     /// Updates the node's label
     pub fn set_label(&self, label: String) {
         self.0.borrow_mut().label = label;
-    }
-
-    /// Sets the gradient for this node
-    pub fn set_grad(&self, grad: f64) {
-        self.0.borrow_mut().grad = grad;
     }
 
     /// Initiates backpropagation from this node.
@@ -271,5 +277,17 @@ impl Div for &Value {
     type Output = Value;
     fn div(self, rhs: &Value) -> Value {
         Value::binary_op(self, rhs, "/")
+    }
+}
+
+impl Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Value(data: {}, grad: {})", self.data(), self.grad())
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Value(data: {}, grad: {})", self.data(), self.grad())
     }
 }

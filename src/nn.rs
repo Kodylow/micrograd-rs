@@ -6,7 +6,7 @@ pub trait Module {
     fn parameters(&self) -> Vec<Value>;
 
     fn zero_grad(&mut self) {
-        for mut p in self.parameters() {
+        for p in self.parameters() {
             p.set_grad(0.0);
         }
     }
@@ -103,6 +103,21 @@ impl MLP {
             x = layer.forward(&x);
         }
         x
+    }
+
+    pub fn update_weights(&mut self, learning_rate: f64) {
+        for layer in &mut self.layers {
+            for neuron in &mut layer.neurons {
+                // Update weights
+                for w in &mut neuron.w {
+                    let grad = w.grad();
+                    w.set_data(w.data() - learning_rate * grad);
+                }
+                // Update bias
+                let grad = neuron.b.grad();
+                neuron.b.set_data(neuron.b.data() - learning_rate * grad);
+            }
+        }
     }
 }
 
