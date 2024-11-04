@@ -1,3 +1,7 @@
+//! This module implements a simple autograd engine for training neural networks.
+//! It provides automatic differentiation through a dynamically built computation graph,
+//! enabling backpropagation for gradient-based optimization.
+
 use std::{
     borrow::Borrow,
     collections::HashSet,
@@ -8,40 +12,62 @@ use std::{
 
 use crate::viz::BackpropViz;
 
+/// A node in the computation graph that tracks both forward computation and gradients for backprop.
+/// Each Value represents a scalar value and its gradient with respect to some loss function.
 pub struct Value {
+    /// The actual scalar value stored at this node
     pub(crate) data: f64,
+    /// References to input Values that were used to compute this Value
     pub(crate) prev: Vec<Value>,
+    /// The operation that produced this Value (e.g. "+", "*", "tanh")
     pub(crate) op: String,
+    /// A human-readable label for debugging and visualization
     pub(crate) label: String,
+    /// The gradient of the final output with respect to this Value (∂out/∂self)
     pub(crate) grad: f64,
+    /// Function to compute gradients during backprop using the chain rule
     pub(crate) backward_fn: Option<Arc<dyn Fn(&mut Value) + Send + Sync>>,
 }
 
 impl Value {
+    /// Creates a new Value node in the computation graph.
+    ///
+    /// # Arguments
+    /// * `data` - The scalar value to store
+    /// * `children` - Optional input Values used to compute this Value
+    /// * `label` - Human-readable name for debugging
+    /// * `op` - Optional operation that produced this Value
     pub fn new(data: f64, children: Option<Vec<Value>>, label: String, op: Option<String>) -> Self {
         Self {
             data,
             prev: children.unwrap_or_default(),
             op: op.unwrap_or_default(),
             label,
-            grad: 0.0,
+            grad: 0.0, // Gradients start at zero before backprop
             backward_fn: None,
         }
     }
 
+    /// Updates the node's label
     pub fn set_label(&mut self, label: String) {
         self.label = label;
     }
 
+    /// Sets the gradient for this node
     pub fn set_grad(&mut self, grad: f64) {
         self.grad = grad;
     }
 
+    /// Initiates backpropagation from this node.
+    /// This computes ∂self/∂x for all nodes x in the graph.
     pub fn backward(&mut self) {
         let mut viz = BackpropViz::new();
         self.backward_with_viz(&mut viz)
     }
 
+    /// Internal implementation of backprop that includes visualization.
+    /// Uses the chain rule to propagate gradients backward through the graph:
+    /// If y = f(x) and x = g(w), then ∂L/∂w = (∂L/∂y)(∂y/∂x)(∂x/∂w)
     fn backward_with_viz(&mut self, viz: &mut BackpropViz) {
         let ptr = self as *const Value as usize;
         viz.active_nodes.insert(ptr);
@@ -68,6 +94,8 @@ impl Value {
         }
     }
 
+    /// Implements binary operations (+, -, *, /) between Values.
+    /// Each operation stores its inputs and a closure for computing gradients.
     fn binary_op(left: impl Borrow<Value>, right: impl Borrow<Value>, op: &str) -> Value {
         let left = left.borrow();
         let right = right.borrow();
@@ -86,35 +114,33 @@ impl Value {
             Some(op.to_string()),
         );
 
-        // Set the backprop function based on operation
+        // Each operation must implement its own gradient computation based on calculus rules
         out.backward_fn = match op {
             "+" => Some(Arc::new(|out: &mut Value| {
-                // For addition, gradient flows equally to both inputs
-                // ∂(a+b)/∂a = 1
-                out.prev[0].grad += out.grad;
-                // ∂(a+b)/∂b = 1
-                out.prev[1].grad += out.grad;
+                // Addition: z = x + y
+                // ∂z/∂x = 1, ∂z/∂y = 1
+                out.prev[0].grad += out.grad; // ∂z/∂x = 1
+                out.prev[1].grad += out.grad; // ∂z/∂y = 1
             })),
             "*" => Some(Arc::new(|out: &mut Value| {
-                // For multiplication, gradient flows to each input scaled by the other input
-                // ∂(a*b)/∂a = b
-                out.prev[0].grad += out.prev[1].data * out.grad;
-                // ∂(a*b)/∂b = a
-                out.prev[1].grad += out.prev[0].data * out.grad;
+                // Multiplication: z = x * y
+                // ∂z/∂x = y, ∂z/∂y = x
+                out.prev[0].grad += out.prev[1].data * out.grad; // ∂z/∂x = y
+                out.prev[1].grad += out.prev[0].data * out.grad; // ∂z/∂y = x
             })),
             "-" => Some(Arc::new(|out: &mut Value| {
-                // For subtraction, gradient flows to the first input and subtracts from the second
-                // ∂(a-b)/∂a = 1
-                out.prev[0].grad += out.grad;
-                // ∂(a-b)/∂b = -1
-                out.prev[1].grad -= out.grad;
+                // Subtraction: z = x - y
+                // ∂z/∂x = 1, ∂z/∂y = -1
+                out.prev[0].grad += out.grad; // ∂z/∂x = 1
+                out.prev[1].grad -= out.grad; // ∂z/∂y = -1
             })),
             "/" => Some(Arc::new(|out: &mut Value| {
-                // For division (a/b), gradient flows according to quotient rule
-                // ∂(a/b)/∂a = 1/b
-                out.prev[0].grad += out.grad * (1.0 / out.prev[1].data);
-                // ∂(a/b)/∂b = -a/b²
+                // Division: z = x/y
+                // ∂z/∂x = 1/y
+                // ∂z/∂y = -x/y²
+                out.prev[0].grad += out.grad * (1.0 / out.prev[1].data); // ∂z/∂x = 1/y
                 out.prev[1].grad += out.grad * (-out.prev[0].data / out.prev[1].data.powi(2));
+                // ∂z/∂y = -x/y²
             })),
             _ => None,
         };
@@ -122,6 +148,8 @@ impl Value {
         out
     }
 
+    /// Implements hyperbolic tangent activation function.
+    /// tanh(x) = (e^x - e^-x)/(e^x + e^-x)
     pub fn tanh(&self) -> Value {
         let x = self.data;
         let exp_pos = x.exp();
@@ -135,13 +163,16 @@ impl Value {
         );
 
         out.backward_fn = Some(Arc::new(|out: &mut Value| {
-            // For tanh(x), gradient is 1 - tanh(x)^2
+            // For tanh(x), the derivative is:
+            // ∂tanh(x)/∂x = 1 - tanh²(x)
             let t = out.data; // t is already the tanh result
             out.prev[0].grad += (1.0 - t * t) * out.grad;
         }));
         out
     }
 
+    /// Builds a topologically sorted list of all nodes in the graph.
+    /// This ensures that when we process nodes, all dependencies are handled first.
     pub fn build_topo(&self) -> Vec<Value> {
         let mut topo = Vec::new();
         let mut visited = HashSet::new();
@@ -151,12 +182,12 @@ impl Value {
             if !visited.contains(&ptr) {
                 visited.insert(ptr);
 
-                // Recursively visit all children first
+                // Visit all dependencies first
                 for child in &v.prev {
                     build_topo_recursive(child, topo, visited);
                 }
 
-                // Add current node after all children
+                // Then add this node
                 topo.push(v.clone());
             }
         }
@@ -165,6 +196,7 @@ impl Value {
         topo
     }
 
+    /// Implements power function x^n.
     pub fn pow(&self, exponent: f64) -> Value {
         let mut out = Value::new(
             self.data.powf(exponent),
@@ -174,12 +206,14 @@ impl Value {
         );
 
         out.backward_fn = Some(Arc::new(move |out: &mut Value| {
-            // For power rule: ∂(x^n)/∂x = n * x^(n-1)
+            // Power rule: ∂(x^n)/∂x = n * x^(n-1)
             out.prev[0].grad += exponent * out.prev[0].data.powf(exponent - 1.0) * out.grad;
         }));
         out
     }
 
+    /// Implements ReLU (Rectified Linear Unit) activation function.
+    /// ReLU(x) = max(0, x)
     pub fn relu(&self) -> Value {
         let mut out = Value::new(
             if self.data > 0.0 { self.data } else { 0.0 },
@@ -189,12 +223,15 @@ impl Value {
         );
 
         out.backward_fn = Some(Arc::new(|out: &mut Value| {
+            // ReLU derivative:
+            // ∂ReLU(x)/∂x = 1 if x > 0, else 0
             out.prev[0].grad += if out.data > 0.0 { out.grad } else { 0.0 };
         }));
         out
     }
 }
 
+/// Macro to implement binary operations for Value types
 macro_rules! impl_binary_op {
     ($trait:ident, $fn:ident, $op:expr) => {
         impl $trait for Value {
@@ -217,6 +254,7 @@ impl_binary_op!(Mul, mul, "*");
 impl_binary_op!(Sub, sub, "-");
 impl_binary_op!(Div, div, "/");
 
+// Standard trait implementations for Value type
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
@@ -272,6 +310,7 @@ impl Clone for Value {
     }
 }
 
+// Implementations for scalar operations with Value
 impl Add<f64> for Value {
     type Output = Value;
     fn add(self, rhs: f64) -> Value {
