@@ -267,7 +267,17 @@ impl Value {
         let ptr = Rc::as_ptr(&self.0) as usize;
         if visited.insert(ptr) {
             viz.active_nodes.insert(ptr);
-            viz.draw_step(self, &format!("Processing node: {}", self.label()));
+            let desc = format!(
+                "Computing gradient for node '{}'\n\
+                Current value: {:.4}\n\
+                Current gradient: {:.4}\n\
+                Operation: {}",
+                self.label(),
+                self.data(),
+                self.grad(),
+                self.op()
+            );
+            viz.draw_step(self, &desc);
 
             let internal = self.0.borrow();
             if let Some(ref backward_fn) = internal.backward_fn {
