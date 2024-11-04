@@ -10,6 +10,8 @@ use std::{
     rc::Rc,
 };
 
+use crate::viz::BackpropViz;
+
 /// A node in the computation graph that tracks both forward computation and gradients for backprop.
 /// Each Value represents a scalar value and its gradient with respect to some loss function.
 #[derive(Clone)]
@@ -248,6 +250,40 @@ impl Value {
             out.prev[0].0.borrow_mut().grad += if out.data > 0.0 { out.grad } else { 0.0 };
         }));
         out
+    }
+
+    /// Initiates backpropagation from this node with visualization.
+    /// This computes ∂self/∂x for all nodes x in the graph.
+    pub fn backward_with_viz(&self, viz: &mut BackpropViz) {
+        self.0.borrow_mut().grad = 1.0;
+        let mut visited = HashSet::new();
+        self.backward_internal_with_viz(&mut visited, viz);
+    }
+
+    /// Internal implementation of backprop that includes visualization.
+    /// Uses the chain rule to propagate gradients backward through the graph:
+    /// If y = f(x) and x = g(w), then ∂L/∂w = (∂L/∂y)(∂y/∂x)(∂x/∂w)
+    fn backward_internal_with_viz(&self, visited: &mut HashSet<usize>, viz: &mut BackpropViz) {
+        let ptr = Rc::as_ptr(&self.0) as usize;
+        if visited.insert(ptr) {
+            viz.active_nodes.insert(ptr);
+            viz.draw_step(self, &format!("Processing node: {}", self.label()));
+
+            let internal = self.0.borrow();
+            if let Some(ref backward_fn) = internal.backward_fn {
+                backward_fn(&internal);
+            }
+
+            let prev = internal.prev.clone();
+            drop(internal);
+
+            viz.completed_nodes.insert(ptr);
+            viz.active_nodes.remove(&ptr);
+
+            for child in prev {
+                child.backward_internal_with_viz(visited, viz);
+            }
+        }
     }
 }
 

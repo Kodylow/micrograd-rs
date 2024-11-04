@@ -4,6 +4,8 @@
 //! minimal yet feature-complete implementation.
 
 use anyhow::Result;
+use clap::{Parser, ValueEnum};
+use viz::BackpropViz;
 
 use engine::Value;
 use rand::prelude::SliceRandom;
@@ -18,17 +20,37 @@ mod engine;
 mod nn;
 mod viz;
 
+#[derive(Parser)]
+#[command(author, version, about)]
+struct Args {
+    #[arg(value_enum)]
+    mode: Mode,
+
+    #[arg(short, long)]
+    visualize: bool,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum Mode {
+    Val,
+    Nn,
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    run_values_example()?;
-    run_nn_example()?;
+    let args = Args::parse();
+
+    match args.mode {
+        Mode::Val => run_values_example(args.visualize)?,
+        Mode::Nn => run_nn_example()?,
+    }
     Ok(())
 }
 
-fn run_values_example() -> Result<()> {
+fn run_values_example(visualize: bool) -> Result<()> {
     // inputs x1, x2
     let x1 = Value::new(2.0, None, "x1".to_string(), None);
     let x2 = Value::new(0.0, None, "x2".to_string(), None);
@@ -60,10 +82,14 @@ fn run_values_example() -> Result<()> {
     println!("Before backprop:");
     println!("{}", o.draw_ascii());
 
-    // Backpropagate the gradient of o with respect to n
-    // Set the gradient of o to 1.0 as the base case
-    o.set_grad(1.0);
-    o.backward();
+    if visualize {
+        let mut viz = BackpropViz::new();
+        o.set_grad(1.0);
+        o.backward_with_viz(&mut viz);
+    } else {
+        o.set_grad(1.0);
+        o.backward();
+    }
 
     // Print the computation graph after backprop
     println!("After backprop:");
